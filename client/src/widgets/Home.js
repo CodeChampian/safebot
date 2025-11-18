@@ -1,4 +1,5 @@
 import React from 'react';
+import { Button } from '../components/ui/button';
 import './Home.css';
 
 const Home = ({ onNavigate }) => {
@@ -52,8 +53,8 @@ const Home = ({ onNavigate }) => {
             Evaluate financial, operational, and geopolitical risks with evidence-based insights.
           </p>
           <div className="hero-actions">
-            <button className="cta-button primary" onClick={() => onNavigate('analysis')}>Get Started</button>
-            <button className="cta-button secondary" onClick={() => onNavigate('suppliers')}>View Suppliers</button>
+            <Button size="lg" onClick={() => onNavigate('analysis')}>Get Started</Button>
+            <Button variant="outline" size="lg" onClick={() => onNavigate('suppliers')}>View Suppliers</Button>
           </div>
         </div>
         <div className="hero-visual">
@@ -111,7 +112,7 @@ const Home = ({ onNavigate }) => {
         <div className="cta-content">
           <h2>Ready to Analyze Your Suppliers?</h2>
           <p>Start making data-driven procurement decisions today</p>
-          <button className="cta-button primary large" onClick={() => onNavigate('analysis')}>Start Risk Analysis</button>
+          <Button size="lg" onClick={() => onNavigate('analysis')}>Start Risk Analysis</Button>
         </div>
       </section>
     </div>

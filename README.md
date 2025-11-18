@@ -2,14 +2,27 @@
 
 ## What is this project?
 
-The AI Supply Chain Risk Analyzer is an intelligent decision-support system designed to help procurement teams evaluate supplier-related risks before onboarding or renewing vendors. Using advanced AI techniques, it analyzes supplier documents, financial data, and geopolitical indicators to provide risk assessments with evidence-based justifications.
+The AI Supply Chain Risk Analyzer is a comprehensive intelligent decision-support system designed to help procurement teams manage suppliers and evaluate risks throughout the entire supplier lifecycle. The platform provides:
+
+- **Supplier Management**: Create, update, and manage supplier profiles with detailed information
+- **Document Management**: Upload and organize supplier documents (PDFs, reports, contracts, certifications)
+- **Risk Assessment**: Get Low/Moderate/High risk ratings for suppliers using advanced AI techniques
+- **Evidence-Based Analysis**: Receive detailed explanations with document references
+- **Interactive Dashboard**: User-friendly web interface for supplier management and risk analysis
 
 ## Key Features
 
-- **Risk Assessment**: Get Low/Moderate/High risk ratings for suppliers
+### Supplier Management
+- **Create Suppliers**: Add new supplier profiles with comprehensive details (name, category, location, contact info)
+- **Manage Supplier Data**: Update supplier information and track changes over time
+- **Document Upload**: Upload supplier documents (PDF, DOC, DOCX, TXT) with automated organization
+- **Supplier Dashboard**: View all suppliers in an interactive grid with risk levels and document counts
+
+### Risk Assessment
+- **Risk Analysis**: Get Low/Moderate/High risk ratings for suppliers
 - **Evidence-Based Analysis**: Receive detailed explanations with document references
 - **Synthetic Signal Retrieval**: Advanced AI technique for better document matching
-- **Interactive Dashboard**: User-friendly web interface for risk analysis
+- **Interactive Dashboard**: User-friendly web interface for comprehensive risk analysis
 - **Flexible Supplier Selection**: Analyze specific suppliers or all available data
 - **Real-time Processing**: Instant risk evaluations with supporting evidence
 
@@ -91,11 +104,17 @@ npm run dev
 - Compare multiple suppliers simultaneously
 - Review historical risk trends
 
+### Supplier Management
+- Create new supplier profiles with detailed information
+- View all suppliers in an interactive dashboard with filtering
+- Update supplier information and maintain supplier history
+- Delete suppliers when no longer active
+
 ### Document Management
-- Upload supplier documents (PDFs, reports, financial statements)
-- Automatic metadata extraction and indexing
-- Search across all supplier documentation
-- Evidence-based risk justifications
+- Upload supplier documents (PDFs, reports, financial statements, contracts)
+- Organized document storage by supplier with file type validation
+- Document count tracking for each supplier
+- Retrieve uploaded document metadata and information
 
 ## Example Usage
 
@@ -311,6 +330,101 @@ GET /health
 
 Basic service status check.
 
+### Supplier Management Endpoints
+
+GET /api/suppliers
+
+Retrieve all suppliers with their details.
+
+Output
+
+{
+  "suppliers": [
+    {
+      "id": "SUP-001",
+      "name": "TechSolutions Inc.",
+      "category": "Technology",
+      "location": "USA",
+      "riskLevel": "Low",
+      "contact_email": "contact@techsolutions.com",
+      "contact_phone": "+1-555-0101",
+      "description": "Leading provider of enterprise software solutions",
+      "document_count": 3,
+      "last_assessment": "2025-11-18T19:30:00.000Z",
+      "created_at": "2025-11-18T19:30:00.000Z"
+    }
+  ]
+}
+
+POST /api/suppliers
+
+Create a new supplier.
+
+Input
+
+{
+  "name": "New Supplier Corp",
+  "category": "Manufacturing",
+  "location": "Germany",
+  "contact_email": "info@newsupliercorp.com",
+  "contact_phone": "+49-30-12345678",
+  "description": "Specialized manufacturing company"
+}
+
+Output
+
+{
+  "supplier": {
+    "id": "SUP-ABC123",
+    "name": "New Supplier Corp",
+    "category": "Manufacturing",
+    "location": "Germany",
+    "riskLevel": "Low",
+    "contact_email": "info@newsupliercorp.com",
+    "contact_phone": "+49-30-12345678",
+    "description": "Specialized manufacturing company",
+    "document_count": 0,
+    "last_assessment": "2025-11-18T19:30:00.000Z"
+  }
+}
+
+PUT /api/suppliers/{supplier_id}
+
+Update an existing supplier.
+
+DELETE /api/suppliers/{supplier_id}
+
+Delete a supplier.
+
+POST /api/suppliers/{supplier_id}/documents
+
+Upload a document for a supplier. Supports PDF, DOC, DOCX, TXT files.
+
+Output
+
+{
+  "message": "Document uploaded successfully",
+  "file_path": "uploads/SUP-001/document-uuid.pdf"
+}
+
+GET /api/suppliers/{supplier_id}/documents
+
+Get all documents for a supplier.
+
+Output
+
+{
+  "documents": [
+    {
+      "filename": "contract-2025.pdf",
+      "file_path": "uploads/SUP-001/contract-2025.pdf",
+      "size": 245760,
+      "uploaded_at": "2025-11-18T19:35:00.000Z",
+      "extension": ".pdf"
+    }
+  ]
+}
+
 ## Troubleshooting
 
 ### Common Issues
@@ -351,9 +465,11 @@ Basic service status check.
 ## Architecture Overview
 
 ### Backend (FastAPI)
-- **API Layer**: REST endpoints for risk analysis
+- **API Layer**: REST endpoints for risk analysis and supplier management
+- **Supplier Management**: CRUD operations for supplier profiles and document handling
+- **Document Management**: File upload, validation, and organization by supplier
 - **Processing Layer**: Risk scoring and analysis logic
-- **Data Layer**: Vector database integration
+- **Data Layer**: Vector database integration and in-memory supplier storage
 - **Config Layer**: Environment and settings management
 
 ### Frontend (React)
@@ -363,12 +479,21 @@ Basic service status check.
 - **Responsive Design**: Mobile-friendly interface
 
 ### Data Flow
+
+**Risk Assessment Flow:**
 1. User submits query via frontend
 2. Frontend sends request to backend API
 3. Backend generates synthetic signal
 4. Vector search retrieves relevant documents
 5. AI model analyzes documents and query
 6. Results returned with risk assessment
+
+**Supplier Management Flow:**
+1. User creates/updates supplier via frontend form
+2. Frontend sends supplier data to backend API
+3. Backend validates and stores supplier information
+4. Documents can be uploaded and associated with suppliers
+5. Frontend updates to show new/updated supplier data
 
 ## Contributing
 

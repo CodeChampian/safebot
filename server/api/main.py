@@ -1,12 +1,15 @@
 import os
 import requests
-from fastapi import FastAPI, HTTPException
+import json
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from typing import List
+from typing import List, Optional
+from datetime import datetime
+import uuid
 from qdrant_client import QdrantClient
-from qdrant_client.models import Filter, FieldCondition, MatchValue, SearchRequest
+from qdrant_client.models import Filter, FieldCondition, MatchValue, SearchRequest, PointStruct
 from langchain_huggingface import HuggingFaceEmbeddings
 
 # Load environment variables
@@ -15,8 +18,14 @@ MODEL_PROVIDER_KEY = os.getenv("MODEL_PROVIDER_KEY")
 VECTOR_DB_URL = os.getenv("VECTOR_DB_URL")
 SUPPLIER_DOC_COLLECTION = os.getenv("SUPPLIER_DOC_COLLECTION")
 
-if not MODEL_PROVIDER_KEY:
-    raise ValueError("MODEL_PROVIDER_KEY is missing in .env")
+# File upload settings
+UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
+
+# Uncomment for production
+# if not MODEL_PROVIDER_KEY:
+#     raise ValueError("MODEL_PROVIDER_KEY is missing in .env")
 
 # ==========================
 # CONFIGURATION
@@ -60,6 +69,85 @@ embedder = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
 # Vector DB client (assuming Qdrant for now)
 qdrant = QdrantClient(url=VECTOR_DB_URL)
 
+# In-memory supplier storage (in production, use a proper database)
+suppliers_db = {}
+
+# Initialize with sample suppliers
+def initialize_sample_suppliers():
+    now = datetime.now().isoformat()
+    sample_suppliers = [
+        {
+            "id": "SUP-001",
+            "name": "TechSolutions Inc.",
+            "category": "Technology",
+            "location": "USA",
+            "risk_level": "Low",
+            "contact_email": "contact@techsolutions.com",
+            "contact_phone": "+1-555-0101",
+            "description": "Leading provider of enterprise software solutions",
+            "created_at": now,
+            "last_assessment": now,
+            "document_count": 3
+        },
+        {
+            "id": "SUP-002",
+            "name": "Global Manufacturing Ltd.",
+            "category": "Manufacturing",
+            "location": "China",
+            "risk_level": "Moderate",
+            "contact_email": "info@globalmfg.com",
+            "contact_phone": "+86-21-1234-5678",
+            "description": "Specialized in industrial component manufacturing",
+            "created_at": now,
+            "last_assessment": now,
+            "document_count": 2
+        },
+        {
+            "id": "SUP-003",
+            "name": "Logistics Pro GmbH",
+            "category": "Logistics",
+            "location": "Germany",
+            "risk_level": "Low",
+            "contact_email": "support@logisticspro.de",
+            "contact_phone": "+49-30-9876-5432",
+            "description": "International shipping and logistics services",
+            "created_at": now,
+            "last_assessment": now,
+            "document_count": 4
+        },
+        {
+            "id": "SUP-004",
+            "name": "SupplyChain Services Inc.",
+            "category": "Services",
+            "location": "India",
+            "risk_level": "High",
+            "contact_email": "admin@supplychainservices.in",
+            "contact_phone": "+91-22-3456-7890",
+            "description": "Comprehensive supply chain management consulting",
+            "created_at": now,
+            "last_assessment": now,
+            "document_count": 1
+        },
+        {
+            "id": "SUP-005",
+            "name": "Premier Materials Co.",
+            "category": "Manufacturing",
+            "location": "Japan",
+            "risk_level": "Low",
+            "contact_email": "sales@premiermaterials.co.jp",
+            "contact_phone": "+81-3-1234-5678",
+            "description": "High-quality raw materials and components",
+            "created_at": now,
+            "last_assessment": now,
+            "document_count": 5
+        }
+    ]
+    for supplier in sample_suppliers:
+        suppliers_db[supplier["id"]] = supplier
+
+# Initialize sample data
+initialize_sample_suppliers()
+
 
 # ==========================
 # REQUEST MODELS
@@ -68,6 +156,27 @@ qdrant = QdrantClient(url=VECTOR_DB_URL)
 class AnalyzeQuery(BaseModel):
     query: str
     vendor_ids: List[str]
+
+class SupplierCreate(BaseModel):
+    name: str
+    category: str
+    location: str
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    description: Optional[str] = None
+
+class Supplier(BaseModel):
+    id: str
+    name: str
+    category: str
+    location: str
+    risk_level: str = "Low"
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    description: Optional[str] = None
+    created_at: str
+    last_assessment: str
+    document_count: int = 0
 
 
 # ==========================
@@ -99,6 +208,176 @@ def list_suppliers():
 
     except Exception as e:
         raise HTTPException(500, f"Failed to retrieve supplier list: {e}")
+
+
+# ==========================
+# SUPPLIER MANAGEMENT ROUTES
+# ==========================
+
+@app.get("/api/suppliers")
+def get_all_suppliers():
+    """Get all suppliers."""
+    suppliers = list(suppliers_db.values())
+    # Format data to match frontend expectations
+    formatted_suppliers = []
+    for supplier in suppliers:
+        formatted_suppliers.append({
+            "id": supplier["id"],
+            "name": supplier["name"],
+            "category": supplier["category"],
+            "location": supplier["location"],
+            "riskLevel": supplier["risk_level"],
+            "contact_email": supplier.get("contact_email"),
+            "contact_phone": supplier.get("contact_phone"),
+            "description": supplier.get("description"),
+            "document_count": supplier.get("document_count", 0),
+            "last_assessment": supplier["last_assessment"],
+            "created_at": supplier["created_at"]
+        })
+    return {"suppliers": formatted_suppliers}
+
+
+@app.post("/api/suppliers")
+def create_supplier(supplier_data: SupplierCreate):
+    """Create a new supplier."""
+    # Generate unique ID
+    supplier_id = f"SUP-{str(uuid.uuid4())[:8].upper()}"
+
+    new_supplier = {
+        "id": supplier_id,
+        "name": supplier_data.name,
+        "category": supplier_data.category,
+        "location": supplier_data.location,
+        "risk_level": "Low",  # Default risk level
+        "contact_email": supplier_data.contact_email,
+        "contact_phone": supplier_data.contact_phone,
+        "description": supplier_data.description,
+        "created_at": datetime.now().isoformat(),
+        "last_assessment": datetime.now().isoformat(),
+        "document_count": 0
+    }
+
+    suppliers_db[supplier_id] = new_supplier
+
+    # Return formatted response matching frontend expectations
+    response_supplier = {
+        "id": new_supplier["id"],
+        "name": new_supplier["name"],
+        "category": new_supplier["category"],
+        "location": new_supplier["location"],
+        "riskLevel": new_supplier["risk_level"],
+        "contact_email": new_supplier["contact_email"],
+        "contact_phone": new_supplier["contact_phone"],
+        "description": new_supplier["description"],
+        "document_count": new_supplier["document_count"],
+        "last_assessment": new_supplier["last_assessment"]
+    }
+
+    return {"supplier": response_supplier}
+
+
+@app.put("/api/suppliers/{supplier_id}")
+def update_supplier(supplier_id: str, supplier_data: SupplierCreate):
+    """Update an existing supplier."""
+    if supplier_id not in suppliers_db:
+        raise HTTPException(404, "Supplier not found")
+
+    # Update supplier data
+    suppliers_db[supplier_id].update({
+        "name": supplier_data.name,
+        "category": supplier_data.category,
+        "location": supplier_data.location,
+        "contact_email": supplier_data.contact_email,
+        "contact_phone": supplier_data.contact_phone,
+        "description": supplier_data.description,
+        "last_assessment": datetime.now().isoformat()
+    })
+
+    # Return updated supplier
+    supplier = suppliers_db[supplier_id]
+    response_supplier = {
+        "id": supplier["id"],
+        "name": supplier["name"],
+        "category": supplier["category"],
+        "location": supplier["location"],
+        "riskLevel": supplier["risk_level"],
+        "contact_email": supplier["contact_email"],
+        "contact_phone": supplier["contact_phone"],
+        "description": supplier["description"],
+        "document_count": supplier["document_count"],
+        "last_assessment": supplier["last_assessment"]
+    }
+
+    return {"supplier": response_supplier}
+
+
+@app.delete("/api/suppliers/{supplier_id}")
+def delete_supplier(supplier_id: str):
+    """Delete a supplier."""
+    if supplier_id not in suppliers_db:
+        raise HTTPException(404, "Supplier not found")
+
+    del suppliers_db[supplier_id]
+    return {"message": "Supplier deleted successfully"}
+
+
+@app.post("/api/suppliers/{supplier_id}/documents")
+async def upload_supplier_document(supplier_id: str, file: UploadFile = File(...)):
+    """Upload a document for a specific supplier."""
+    if supplier_id not in suppliers_db:
+        raise HTTPException(404, "Supplier not found")
+
+    # Validate file type
+    allowed_extensions = ['.pdf', '.doc', '.docx', '.txt']
+    file_extension = os.path.splitext(file.filename)[1].lower()
+
+    if file_extension not in allowed_extensions:
+        raise HTTPException(400, f"File type not allowed. Allowed types: {', '.join(allowed_extensions)}")
+
+    # Create supplier's document directory
+    supplier_dir = os.path.join(UPLOAD_DIR, supplier_id)
+    if not os.path.exists(supplier_dir):
+        os.makedirs(supplier_dir)
+
+    # Save the file
+    file_path = os.path.join(supplier_dir, f"{uuid.uuid4()}{file_extension}")
+    try:
+        with open(file_path, "wb") as buffer:
+            buffer.write(await file.read())
+    except Exception as e:
+        raise HTTPException(500, f"Failed to save file: {e}")
+
+    # Update document count for supplier
+    suppliers_db[supplier_id]["document_count"] += 1
+
+    return {"message": "Document uploaded successfully", "file_path": file_path}
+
+
+@app.get("/api/suppliers/{supplier_id}/documents")
+def get_supplier_documents(supplier_id: str):
+    """Get all documents for a specific supplier."""
+    if supplier_id not in suppliers_db:
+        raise HTTPException(404, "Supplier not found")
+
+    supplier_dir = os.path.join(UPLOAD_DIR, supplier_id)
+    if not os.path.exists(supplier_dir):
+        return {"documents": []}
+
+    documents = []
+    for filename in os.listdir(supplier_dir):
+        file_path = os.path.join(supplier_dir, filename)
+        if os.path.isfile(file_path):
+            # Get file info
+            file_stat = os.stat(file_path)
+            documents.append({
+                "filename": filename,
+                "file_path": file_path,
+                "size": file_stat.st_size,
+                "uploaded_at": datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
+                "extension": os.path.splitext(filename)[1]
+            })
+
+    return {"documents": documents}
 
 
 # ==========================

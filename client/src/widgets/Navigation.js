@@ -1,4 +1,5 @@
 import React from 'react';
+import { Button } from '../components/ui/button';
 import './Navigation.css';
 
 const Navigation = ({ currentView, onViewChange }) => {
@@ -15,14 +16,14 @@ const Navigation = ({ currentView, onViewChange }) => {
       </div>
       <div className="nav-menu">
         {navItems.map(item => (
-          <button
+          <Button
             key={item.id}
-            className={`nav-item ${currentView === item.id ? 'active' : ''}`}
+            variant={currentView === item.id ? 'default' : 'ghost'}
             onClick={() => onViewChange(item.id)}
           >
             <span className="nav-icon">{item.icon}</span>
             <span className="nav-label">{item.label}</span>
-          </button>
+          </Button>
         ))}
       </div>
     </nav>
