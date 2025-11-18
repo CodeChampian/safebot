@@ -6,7 +6,6 @@
 }
 
 .suppliers-header {
-  text-align: center;
   margin-bottom: 3rem;
 }
 
@@ -105,6 +104,29 @@
   margin-bottom: 1rem;
 }
 
+.supplier-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.edit-btn {
+  background: transparent;
+  border: 1px solid #e9ecef;
+  color: #7f8c8d;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+}
+
+.edit-btn:hover {
+  background: #f8f9fa;
+  border-color: #3498db;
+  color: #3498db;
+}
+
 .supplier-info h3 {
   margin: 0 0 0.25rem 0;
   font-size: 1.2rem;
@@ -172,15 +194,17 @@
 
 .supplier-actions {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .action-btn {
   flex: 1;
-  padding: 0.75rem 1rem;
+  min-width: 0;
+  padding: 0.625rem 0.75rem;
   border: none;
   border-radius: 8px;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -205,6 +229,19 @@
 .action-btn.secondary:hover {
   background: #3498db;
   color: white;
+}
+
+.action-btn.tertiary {
+  background: #e3f2fd;
+  color: #1976d2;
+  border: 2px solid #e3f2fd;
+}
+
+.action-btn.tertiary:hover {
+  background: #1976d2;
+  border-color: #1976d2;
+  color: white;
+  transform: translateY(-1px);
 }
 
 .loading-state {
@@ -251,6 +288,38 @@
   font-size: 1.1rem;
 }
 
+/* Status text styles */
+.status-text {
+  cursor: pointer;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-active {
+  background: #d4edda;
+  color: #155724;
+}
+
+.status-active:hover {
+  background: #c3e6cb;
+  transform: translateY(-1px);
+}
+
+.status-inactive {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.status-inactive:hover {
+  background: #f5c6cb;
+  transform: translateY(-1px);
+}
+
 @media (max-width: 768px) {
   .suppliers-container {
     padding: 1rem;
@@ -290,5 +359,277 @@
 
   .action-btn {
     width: 100%;
+  }
+}
+
+/* Documents Viewer Styles */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.documents-viewer {
+  display: flex;
+  height: 80vh;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+}
+
+/* Documents Dialog Base Styles */
+.documents-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  animation: fadeIn 0.2s ease-out;
+  padding: 2rem;
+}
+
+.documents-dialog-content {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  max-width: 90vw;
+  max-height: 90vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.documents-sidebar {
+  width: 25%;
+  border-right: 1px solid #e9ecef;
+  display: flex;
+  flex-direction: column;
+  background: #f8f9fa;
+}
+
+.documents-header {
+  padding: 1rem;
+  border-bottom: 1px solid #e1e5e9;
+  background: white;
+}
+
+.documents-header h4 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #2c3e50;
+  font-weight: 600;
+}
+
+.documents-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 0;
+}
+
+.document-item {
+  display: flex;
+  align-items: center;
+  padding: 1rem 1rem 1rem 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-bottom: 1px solid #e9ecef;
+  margin: 0 0.5rem;
+  border-radius: 6px;
+}
+
+.document-item:hover {
+  background: rgba(52, 152, 219, 0.1);
+}
+
+.document-item.selected {
+  background: #3498db;
+  color: white;
+}
+
+.document-item.selected:hover {
+  background: #2980b9;
+}
+
+.document-icon {
+  font-size: 1.5rem;
+  margin-right: 0.75rem;
+  min-width: 30px;
+  text-align: center;
+}
+
+.document-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.document-name {
+  font-weight: 500;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 0.25rem;
+}
+
+.document-date {
+  font-size: 0.8rem;
+  color: #7f8c8d;
+}
+
+.document-item.selected .document-date {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.documents-preview {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.no-preview,
+.loading-documents,
+.no-documents {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  text-align: center;
+  padding: 2rem;
+  color: #7f8c8d;
+}
+
+.preview-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.file-icon-large {
+  font-size: 4rem;
+  opacity: 0.5;
+}
+
+.preview-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid #e9ecef;
+  background: white;
+}
+
+.preview-header h4 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #2c3e50;
+  font-weight: 600;
+  flex: 1;
+}
+
+.preview-content {
+  flex: 1;
+  padding: 1rem;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.pdf-preview {
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 4px;
+}
+
+.text-preview {
+  background: #f8f9fa;
+  padding: 1rem;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.unsupported-preview {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.unsupported-preview .preview-placeholder {
+  max-width: 300px;
+}
+
+@media (max-width: 1024px) {
+  .documents-sidebar {
+    width: 30%;
+  }
+}
+
+@media (max-width: 768px) {
+  .documents-viewer {
+    flex-direction: column;
+    height: 70vh;
+  }
+
+  .documents-sidebar {
+    width: 100%;
+    height: 30%;
+    border-right: none;
+    border-bottom: 1px solid #e9ecef;
+  }
+
+  .documents-preview {
+    height: 70%;
+  }
+
+  .documents-list {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 0.5rem;
+  }
+
+  .document-item {
+    flex: 0 0 auto;
+    width: 200px;
+    margin: 0 0.5rem 0 0;
+    padding: 0.75rem;
+  }
+
+  .document-icon {
+    font-size: 1.2rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .document-info {
+    text-align: center;
+  }
+
+  .document-name {
+    font-size: 0.8rem;
+  }
+
+  .document-date {
+    font-size: 0.75rem;
   }
 }

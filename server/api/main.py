@@ -2,12 +2,15 @@ import os
 import requests
 import json
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from typing import List, Optional
 from datetime import datetime
 import uuid
+from motor.motor_asyncio import AsyncIOMotorClient
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue, SearchRequest, PointStruct
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -17,6 +20,7 @@ load_dotenv()
 MODEL_PROVIDER_KEY = os.getenv("MODEL_PROVIDER_KEY")
 VECTOR_DB_URL = os.getenv("VECTOR_DB_URL")
 SUPPLIER_DOC_COLLECTION = os.getenv("SUPPLIER_DOC_COLLECTION")
+MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
 
 # File upload settings
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
@@ -63,90 +67,22 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
+# Mount static files directory for file serving
+app.mount("/files", StaticFiles(directory=UPLOAD_DIR), name="files")
+
 # Embeddings
 embedder = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
 
 # Vector DB client (assuming Qdrant for now)
 qdrant = QdrantClient(url=VECTOR_DB_URL)
 
-# In-memory supplier storage (in production, use a proper database)
-suppliers_db = {}
+# MongoDB client
+mongo_client = AsyncIOMotorClient(MONGO_URL)
+database = mongo_client["supply_chain_analyzer"]
 
-# Initialize with sample suppliers
-def initialize_sample_suppliers():
-    now = datetime.now().isoformat()
-    sample_suppliers = [
-        {
-            "id": "SUP-001",
-            "name": "TechSolutions Inc.",
-            "category": "Technology",
-            "location": "USA",
-            "risk_level": "Low",
-            "contact_email": "contact@techsolutions.com",
-            "contact_phone": "+1-555-0101",
-            "description": "Leading provider of enterprise software solutions",
-            "created_at": now,
-            "last_assessment": now,
-            "document_count": 3
-        },
-        {
-            "id": "SUP-002",
-            "name": "Global Manufacturing Ltd.",
-            "category": "Manufacturing",
-            "location": "China",
-            "risk_level": "Moderate",
-            "contact_email": "info@globalmfg.com",
-            "contact_phone": "+86-21-1234-5678",
-            "description": "Specialized in industrial component manufacturing",
-            "created_at": now,
-            "last_assessment": now,
-            "document_count": 2
-        },
-        {
-            "id": "SUP-003",
-            "name": "Logistics Pro GmbH",
-            "category": "Logistics",
-            "location": "Germany",
-            "risk_level": "Low",
-            "contact_email": "support@logisticspro.de",
-            "contact_phone": "+49-30-9876-5432",
-            "description": "International shipping and logistics services",
-            "created_at": now,
-            "last_assessment": now,
-            "document_count": 4
-        },
-        {
-            "id": "SUP-004",
-            "name": "SupplyChain Services Inc.",
-            "category": "Services",
-            "location": "India",
-            "risk_level": "High",
-            "contact_email": "admin@supplychainservices.in",
-            "contact_phone": "+91-22-3456-7890",
-            "description": "Comprehensive supply chain management consulting",
-            "created_at": now,
-            "last_assessment": now,
-            "document_count": 1
-        },
-        {
-            "id": "SUP-005",
-            "name": "Premier Materials Co.",
-            "category": "Manufacturing",
-            "location": "Japan",
-            "risk_level": "Low",
-            "contact_email": "sales@premiermaterials.co.jp",
-            "contact_phone": "+81-3-1234-5678",
-            "description": "High-quality raw materials and components",
-            "created_at": now,
-            "last_assessment": now,
-            "document_count": 5
-        }
-    ]
-    for supplier in sample_suppliers:
-        suppliers_db[supplier["id"]] = supplier
-
-# Initialize sample data
-initialize_sample_suppliers()
+# Collections
+suppliers_collection = database["suppliers"]
+document_logs_collection = database["document_logs"]
 
 
 # ==========================
@@ -164,6 +100,7 @@ class SupplierCreate(BaseModel):
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
     description: Optional[str] = None
+    active: bool = True
 
 class Supplier(BaseModel):
     id: str
@@ -215,169 +152,231 @@ def list_suppliers():
 # ==========================
 
 @app.get("/api/suppliers")
-def get_all_suppliers():
+async def get_all_suppliers():
     """Get all suppliers."""
-    suppliers = list(suppliers_db.values())
-    # Format data to match frontend expectations
-    formatted_suppliers = []
-    for supplier in suppliers:
-        formatted_suppliers.append({
-            "id": supplier["id"],
-            "name": supplier["name"],
-            "category": supplier["category"],
-            "location": supplier["location"],
-            "riskLevel": supplier["risk_level"],
-            "contact_email": supplier.get("contact_email"),
-            "contact_phone": supplier.get("contact_phone"),
-            "description": supplier.get("description"),
-            "document_count": supplier.get("document_count", 0),
-            "last_assessment": supplier["last_assessment"],
-            "created_at": supplier["created_at"]
-        })
-    return {"suppliers": formatted_suppliers}
+    try:
+        suppliers_cursor = suppliers_collection.find()
+        suppliers = await suppliers_cursor.to_list(length=None)
+        # Format data to match frontend expectations
+        formatted_suppliers = []
+        for supplier in suppliers:
+            formatted_suppliers.append({
+                "id": supplier["id"],
+                "name": supplier["name"],
+                "category": supplier["category"],
+                "location": supplier["location"],
+                "riskLevel": supplier["risk_level"],
+                "contact_email": supplier.get("contact_email"),
+                "contact_phone": supplier.get("contact_phone"),
+                "description": supplier.get("description"),
+                "active": supplier.get("active", True),
+                "document_count": supplier.get("document_count", 0),
+                "last_assessment": supplier["last_assessment"],
+                "created_at": supplier["created_at"]
+            })
+        return {"suppliers": formatted_suppliers}
+    except Exception as e:
+        raise HTTPException(500, f"Failed to retrieve suppliers: {e}")
 
 
 @app.post("/api/suppliers")
-def create_supplier(supplier_data: SupplierCreate):
+async def create_supplier(supplier_data: SupplierCreate):
     """Create a new supplier."""
-    # Generate unique ID
-    supplier_id = f"SUP-{str(uuid.uuid4())[:8].upper()}"
+    try:
+        # Generate unique ID
+        supplier_id = f"SUP-{str(uuid.uuid4())[:8].upper()}"
 
-    new_supplier = {
-        "id": supplier_id,
-        "name": supplier_data.name,
-        "category": supplier_data.category,
-        "location": supplier_data.location,
-        "risk_level": "Low",  # Default risk level
-        "contact_email": supplier_data.contact_email,
-        "contact_phone": supplier_data.contact_phone,
-        "description": supplier_data.description,
-        "created_at": datetime.now().isoformat(),
-        "last_assessment": datetime.now().isoformat(),
-        "document_count": 0
-    }
+        new_supplier = {
+            "id": supplier_id,
+            "name": supplier_data.name,
+            "category": supplier_data.category,
+            "location": supplier_data.location,
+            "risk_level": "Low",  # Default risk level
+            "contact_email": supplier_data.contact_email,
+            "contact_phone": supplier_data.contact_phone,
+            "description": supplier_data.description,
+            "active": supplier_data.active,
+            "created_at": datetime.now().isoformat(),
+            "last_assessment": datetime.now().isoformat(),
+            "document_count": 0
+        }
 
-    suppliers_db[supplier_id] = new_supplier
+        await suppliers_collection.insert_one(new_supplier)
 
-    # Return formatted response matching frontend expectations
-    response_supplier = {
-        "id": new_supplier["id"],
-        "name": new_supplier["name"],
-        "category": new_supplier["category"],
-        "location": new_supplier["location"],
-        "riskLevel": new_supplier["risk_level"],
-        "contact_email": new_supplier["contact_email"],
-        "contact_phone": new_supplier["contact_phone"],
-        "description": new_supplier["description"],
-        "document_count": new_supplier["document_count"],
-        "last_assessment": new_supplier["last_assessment"]
-    }
+        # Return formatted response matching frontend expectations
+        response_supplier = {
+            "id": new_supplier["id"],
+            "name": new_supplier["name"],
+            "category": new_supplier["category"],
+            "location": new_supplier["location"],
+            "riskLevel": new_supplier["risk_level"],
+            "contact_email": new_supplier["contact_email"],
+            "contact_phone": new_supplier["contact_phone"],
+            "description": new_supplier["description"],
+            "document_count": new_supplier["document_count"],
+            "last_assessment": new_supplier["last_assessment"],
+            "created_at": new_supplier["created_at"]
+        }
 
-    return {"supplier": response_supplier}
+        return {"supplier": response_supplier}
+    except Exception as e:
+        raise HTTPException(500, f"Failed to create supplier: {e}")
 
 
 @app.put("/api/suppliers/{supplier_id}")
-def update_supplier(supplier_id: str, supplier_data: SupplierCreate):
+async def update_supplier(supplier_id: str, supplier_data: SupplierCreate):
     """Update an existing supplier."""
-    if supplier_id not in suppliers_db:
-        raise HTTPException(404, "Supplier not found")
+    try:
+        supplier = await suppliers_collection.find_one({"id": supplier_id})
+        if not supplier:
+            raise HTTPException(404, "Supplier not found")
 
-    # Update supplier data
-    suppliers_db[supplier_id].update({
-        "name": supplier_data.name,
-        "category": supplier_data.category,
-        "location": supplier_data.location,
-        "contact_email": supplier_data.contact_email,
-        "contact_phone": supplier_data.contact_phone,
-        "description": supplier_data.description,
-        "last_assessment": datetime.now().isoformat()
-    })
+        # Update supplier data
+        update_data = {
+            "name": supplier_data.name,
+            "category": supplier_data.category,
+            "location": supplier_data.location,
+            "contact_email": supplier_data.contact_email,
+            "contact_phone": supplier_data.contact_phone,
+            "description": supplier_data.description,
+            "active": supplier_data.active,
+            "last_assessment": datetime.now().isoformat()
+        }
 
-    # Return updated supplier
-    supplier = suppliers_db[supplier_id]
-    response_supplier = {
-        "id": supplier["id"],
-        "name": supplier["name"],
-        "category": supplier["category"],
-        "location": supplier["location"],
-        "riskLevel": supplier["risk_level"],
-        "contact_email": supplier["contact_email"],
-        "contact_phone": supplier["contact_phone"],
-        "description": supplier["description"],
-        "document_count": supplier["document_count"],
-        "last_assessment": supplier["last_assessment"]
-    }
+        await suppliers_collection.update_one({"id": supplier_id}, {"$set": update_data})
 
-    return {"supplier": response_supplier}
+        # Return updated supplier
+        updated_supplier = await suppliers_collection.find_one({"id": supplier_id})
+        response_supplier = {
+            "id": updated_supplier["id"],
+            "name": updated_supplier["name"],
+            "category": updated_supplier["category"],
+            "location": updated_supplier["location"],
+            "riskLevel": updated_supplier["risk_level"],
+            "contact_email": updated_supplier.get("contact_email"),
+            "contact_phone": updated_supplier.get("contact_phone"),
+            "description": updated_supplier.get("description"),
+            "document_count": updated_supplier.get("document_count", 0),
+            "last_assessment": updated_supplier["last_assessment"],
+            "created_at": updated_supplier["created_at"]
+        }
+
+        return {"supplier": response_supplier}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Failed to update supplier: {e}")
 
 
 @app.delete("/api/suppliers/{supplier_id}")
-def delete_supplier(supplier_id: str):
+async def delete_supplier(supplier_id: str):
     """Delete a supplier."""
-    if supplier_id not in suppliers_db:
-        raise HTTPException(404, "Supplier not found")
+    try:
+        supplier = await suppliers_collection.find_one({"id": supplier_id})
+        if not supplier:
+            raise HTTPException(404, "Supplier not found")
 
-    del suppliers_db[supplier_id]
-    return {"message": "Supplier deleted successfully"}
+        await suppliers_collection.delete_one({"id": supplier_id})
+        return {"message": "Supplier deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Failed to delete supplier: {e}")
 
 
 @app.post("/api/suppliers/{supplier_id}/documents")
 async def upload_supplier_document(supplier_id: str, file: UploadFile = File(...)):
     """Upload a document for a specific supplier."""
-    if supplier_id not in suppliers_db:
-        raise HTTPException(404, "Supplier not found")
-
-    # Validate file type
-    allowed_extensions = ['.pdf', '.doc', '.docx', '.txt']
-    file_extension = os.path.splitext(file.filename)[1].lower()
-
-    if file_extension not in allowed_extensions:
-        raise HTTPException(400, f"File type not allowed. Allowed types: {', '.join(allowed_extensions)}")
-
-    # Create supplier's document directory
-    supplier_dir = os.path.join(UPLOAD_DIR, supplier_id)
-    if not os.path.exists(supplier_dir):
-        os.makedirs(supplier_dir)
-
-    # Save the file
-    file_path = os.path.join(supplier_dir, f"{uuid.uuid4()}{file_extension}")
     try:
-        with open(file_path, "wb") as buffer:
-            buffer.write(await file.read())
+        supplier = await suppliers_collection.find_one({"id": supplier_id})
+        if not supplier:
+            raise HTTPException(404, "Supplier not found")
+
+        # Validate file type
+        allowed_extensions = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg']
+        file_extension = os.path.splitext(file.filename)[1].lower()
+
+        if file_extension not in allowed_extensions:
+            raise HTTPException(400, f"File type not allowed. Allowed types: {', '.join(allowed_extensions)}")
+
+        # Generate unique file name
+        file_id = str(uuid.uuid4())
+        file_name = f"{file_id}{file_extension}"
+
+        # Create supplier's document directory
+        supplier_dir = os.path.join(UPLOAD_DIR, supplier_id)
+        if not os.path.exists(supplier_dir):
+            os.makedirs(supplier_dir)
+
+        # Save the file
+        file_path = os.path.join(supplier_dir, file_name)
+        try:
+            content = await file.read()
+            with open(file_path, "wb") as buffer:
+                buffer.write(content)
+        except Exception as e:
+            raise HTTPException(500, f"Failed to save file: {e}")
+
+        # Log document upload
+        document_log = {
+            "supplier_id": supplier_id,
+            "file_id": file_id,
+            "filename": file.filename,
+            "stored_filename": file_name,
+            "file_path": file_path,
+            "file_size": len(content),
+            "file_extension": file_extension,
+            "uploaded_at": datetime.now().isoformat()
+        }
+        await document_logs_collection.insert_one(document_log)
+
+        # Update document count for supplier
+        await suppliers_collection.update_one(
+            {"id": supplier_id},
+            {"$inc": {"document_count": 1}}
+        )
+
+        return {"message": "Document uploaded successfully", "file_path": file_path}
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(500, f"Failed to save file: {e}")
-
-    # Update document count for supplier
-    suppliers_db[supplier_id]["document_count"] += 1
-
-    return {"message": "Document uploaded successfully", "file_path": file_path}
+        raise HTTPException(500, f"Failed to upload document: {e}")
 
 
 @app.get("/api/suppliers/{supplier_id}/documents")
-def get_supplier_documents(supplier_id: str):
+async def get_supplier_documents(supplier_id: str):
     """Get all documents for a specific supplier."""
-    if supplier_id not in suppliers_db:
-        raise HTTPException(404, "Supplier not found")
+    try:
+        supplier = await suppliers_collection.find_one({"id": supplier_id})
+        if not supplier:
+            raise HTTPException(404, "Supplier not found")
 
-    supplier_dir = os.path.join(UPLOAD_DIR, supplier_id)
-    if not os.path.exists(supplier_dir):
-        return {"documents": []}
+        # Fetch document logs from MongoDB
+        documents_cursor = document_logs_collection.find({"supplier_id": supplier_id}).sort("uploaded_at", -1)
+        documents = await documents_cursor.to_list(length=None)
 
-    documents = []
-    for filename in os.listdir(supplier_dir):
-        file_path = os.path.join(supplier_dir, filename)
-        if os.path.isfile(file_path):
-            # Get file info
-            file_stat = os.stat(file_path)
-            documents.append({
-                "filename": filename,
-                "file_path": file_path,
-                "size": file_stat.st_size,
-                "uploaded_at": datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
-                "extension": os.path.splitext(filename)[1]
+        # Format for response
+        formatted_documents = []
+        for doc in documents:
+            # Create URL for frontend access (files served at /files endpoint)
+            relative_path = doc["file_path"].replace(UPLOAD_DIR, "").lstrip(os.sep).replace("\\", "/")
+            file_url = f"{os.getenv('API_BASE_URL', 'http://localhost:8000')}/files/{relative_path}"
+
+            formatted_documents.append({
+                "id": doc["file_id"],
+                "filename": doc["filename"],
+                "file_path": doc["file_path"],
+                "url": file_url,
+                "size": doc["file_size"],
+                "uploaded_at": doc["uploaded_at"],
+                "extension": doc["file_extension"]
             })
 
-    return {"documents": documents}
+        return {"documents": formatted_documents}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Failed to retrieve documents: {e}")
 
 
 # ==========================

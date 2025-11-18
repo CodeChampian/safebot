@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getAllSuppliers, createSupplier, uploadSupplierDocument } from '../api/api';
+import { getAllSuppliers, createSupplier, updateSupplier, uploadSupplierDocument, getSupplierDocuments } from '../api/api';
 import { Button } from '../components/ui/button.jsx';
 import { Input } from '../components/ui/input.jsx';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card.jsx';
@@ -12,8 +12,23 @@ const Suppliers = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState(null);
+  const [isDocumentsDialogOpen, setIsDocumentsDialogOpen] = useState(false);
+  const [documentsViewSupplier, setDocumentsViewSupplier] = useState(null);
+  const [supplierDocuments, setSupplierDocuments] = useState([]);
+  const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [formData, setFormData] = useState({
+    name: '',
+    category: '',
+    location: '',
+    contact_email: '',
+    contact_phone: '',
+    description: ''
+  });
+  const [editFormData, setEditFormData] = useState({
     name: '',
     category: '',
     location: '',
@@ -91,6 +106,98 @@ const Suppliers = () => {
     }
   };
 
+  const handleActiveToggle = async (supplierId, currentActive) => {
+    try {
+      // Prepare update data with all current supplier data plus flipped active
+      const supplier = suppliers.find(s => s.id === supplierId);
+      if (supplier) {
+        const updateData = {
+          name: supplier.name,
+          category: supplier.category,
+          location: supplier.location,
+          contact_email: supplier.contact_email,
+          contact_phone: supplier.contact_phone,
+          description: supplier.description,
+          active: !currentActive // Toggle active status
+        };
+
+        await updateSupplier(supplierId, updateData);
+        // Refresh suppliers to reflect the change
+        fetchSuppliers();
+      }
+    } catch (error) {
+      console.error('Error toggling active status:', error);
+    }
+  };
+
+  const handleEditSupplier = async (e) => {
+    e.preventDefault();
+    setErrors({});
+
+    // Basic validation
+    if (!editFormData.name.trim() || !editFormData.category.trim() || !editFormData.location.trim()) {
+      setErrors({ general: 'Please fill in all required fields.' });
+      return;
+    }
+
+    try {
+      const updateData = {
+        name: editFormData.name.trim(),
+        category: editFormData.category.trim(),
+        location: editFormData.location.trim(),
+        contact_email: editFormData.contact_email.trim() || null,
+        contact_phone: editFormData.contact_phone.trim() || null,
+        description: editFormData.description.trim() || null,
+        active: editingSupplier.active // Keep current active status
+      };
+
+      await updateSupplier(editingSupplier.id, updateData);
+
+      // Refresh suppliers to reflect the changes
+      fetchSuppliers();
+
+      // Close dialog
+      setIsEditDialogOpen(false);
+      setEditingSupplier(null);
+    } catch (error) {
+      console.error('Error updating supplier:', error);
+      setErrors({ general: 'Failed to update supplier. Please try again.' });
+    }
+  };
+
+  const openEditDialog = (supplier) => {
+    setEditingSupplier(supplier);
+    setEditFormData({
+      name: supplier.name || '',
+      category: supplier.category || '',
+      location: supplier.location || '',
+      contact_email: supplier.contact_email || '',
+      contact_phone: supplier.contact_phone || '',
+      description: supplier.description || ''
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleViewDocuments = async (supplier) => {
+    setDocumentsViewSupplier(supplier);
+    setLoadingDocuments(true);
+    setSelectedDocument(null);
+    try {
+      const response = await getSupplierDocuments(supplier.id);
+      setSupplierDocuments(response.documents || []);
+    } catch (error) {
+      console.error('Error fetching documents:', error);
+      setSupplierDocuments([]);
+    } finally {
+      setLoadingDocuments(false);
+    }
+    setIsDocumentsDialogOpen(true);
+  };
+
+  const selectDocument = (document) => {
+    setSelectedDocument(document);
+  };
+
   const filteredSuppliers = suppliers.filter(supplier =>
     supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     supplier.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -124,107 +231,333 @@ const Suppliers = () => {
           <h1>Supplier Management</h1>
           <p>View and manage all suppliers in your risk analysis database</p>
         </div>
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>Add New Supplier</Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>Create New Supplier</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleCreateSupplier} className="space-y-4">
-              {errors.general && (
-                <div className="text-red-600 text-sm bg-red-50 p-3 rounded">
-                  {errors.general}
-                </div>
-              )}
+        <Button onClick={() => setIsCreateDialogOpen(true)}>Add New Supplier</Button>
+      </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="name">Company Name *</Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                    placeholder="Enter company name"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="category">Category *</Label>
-                  <Input
-                    id="category"
-                    value={formData.category}
-                    onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
-                    placeholder="e.g., Technology, Manufacturing"
-                    required
-                  />
-                </div>
+      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Create New Supplier</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreateSupplier} className="space-y-4">
+            {errors.general && (
+              <div className="text-red-600 text-sm bg-red-50 p-3 rounded">
+                {errors.general}
               </div>
+            )}
 
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="location">Location *</Label>
+                <Label htmlFor="name">Company Name *</Label>
                 <Input
-                  id="location"
-                  value={formData.location}
-                  onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
-                  placeholder="Country or region"
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Enter company name"
                   required
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="contact_email">Email</Label>
-                  <Input
-                    id="contact_email"
-                    type="email"
-                    value={formData.contact_email}
-                    onChange={(e) => setFormData(prev => ({ ...prev, contact_email: e.target.value }))}
-                    placeholder="contact@company.com"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="contact_phone">Phone</Label>
-                  <Input
-                    id="contact_phone"
-                    value={formData.contact_phone}
-                    onChange={(e) => setFormData(prev => ({ ...prev, contact_phone: e.target.value }))}
-                    placeholder="+1-555-0123"
-                  />
-                </div>
-              </div>
-
               <div>
-                <Label htmlFor="description">Description</Label>
-                <textarea
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Brief description of the supplier..."
-                  className="flex min-h-[80px] w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:ring-offset-slate-950 dark:placeholder:text-slate-400 dark:focus-visible:ring-slate-300"
-                  rows="3"
+                <Label htmlFor="category">Category *</Label>
+                <Input
+                  id="category"
+                  value={formData.category}
+                  onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                  placeholder="e.g., Technology, Manufacturing"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="location">Location *</Label>
+              <Input
+                id="location"
+                value={formData.location}
+                onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
+                placeholder="Country or region"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="contact_email">Email</Label>
+                <Input
+                  id="contact_email"
+                  type="email"
+                  value={formData.contact_email}
+                  onChange={(e) => setFormData(prev => ({ ...prev, contact_email: e.target.value }))}
+                  placeholder="contact@company.com"
                 />
               </div>
 
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsCreateDialogOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit">
-                  Create Supplier
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+              <div>
+                <Label htmlFor="contact_phone">Phone</Label>
+                <Input
+                  id="contact_phone"
+                  value={formData.contact_phone}
+                  onChange={(e) => setFormData(prev => ({ ...prev, contact_phone: e.target.value }))}
+                  placeholder="+1-555-0123"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="description">Description</Label>
+              <textarea
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Brief description of the supplier..."
+                className="flex min-h-[80px] w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                rows="3"
+              />
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsCreateDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit">
+                Create Supplier
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Edit Supplier</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleEditSupplier} className="space-y-4">
+            {errors.general && (
+              <div className="text-red-600 text-sm bg-red-50 p-3 rounded">
+                {errors.general}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit-name">Company Name *</Label>
+                <Input
+                  id="edit-name"
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Enter company name"
+                  required
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-category">Category *</Label>
+                <Input
+                  id="edit-category"
+                  value={editFormData.category}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, category: e.target.value }))}
+                  placeholder="e.g., Technology, Manufacturing"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="edit-location">Location *</Label>
+              <Input
+                id="edit-location"
+                value={editFormData.location}
+                onChange={(e) => setEditFormData(prev => ({ ...prev, location: e.target.value }))}
+                placeholder="Country or region"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit-contact_email">Email</Label>
+                <Input
+                  id="edit-contact_email"
+                  type="email"
+                  value={editFormData.contact_email}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, contact_email: e.target.value }))}
+                  placeholder="contact@company.com"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-contact_phone">Phone</Label>
+                <Input
+                  id="edit-contact_phone"
+                  value={editFormData.contact_phone}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, contact_phone: e.target.value }))}
+                  placeholder="+1-555-0123"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="edit-description">Description</Label>
+              <textarea
+                id="edit-description"
+                value={editFormData.description}
+                onChange={(e) => setEditFormData(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Brief description of the supplier..."
+                className="flex min-h-[80px] w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                rows="3"
+              />
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsEditDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit">
+                Update Supplier
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Documents Viewer Modal */}
+      {isDocumentsDialogOpen && (
+        <div className="documents-dialog">
+          <div className="documents-dialog-content">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold">
+                {documentsViewSupplier ? `Documents for ${documentsViewSupplier.name}` : 'Documents'}
+              </h3>
+            </div>
+            <div className="documents-viewer">
+              <div className="documents-sidebar">
+                <div className="documents-header">
+                  <h4>Files ({supplierDocuments.length})</h4>
+                </div>
+                <div className="documents-list">
+                  {loadingDocuments ? (
+                    <div className="loading-documents">
+                      <div className="loading-spinner"></div>
+                      <p>Loading documents...</p>
+                    </div>
+                  ) : supplierDocuments.length === 0 ? (
+                    <div className="no-documents">
+                      <p>No documents found</p>
+                    </div>
+                  ) : (
+                    supplierDocuments.map((doc, index) => (
+                      <div
+                        key={doc.id || index}
+                        className={`document-item ${selectedDocument && selectedDocument.id === doc.id ? 'selected' : ''}`}
+                        onClick={() => selectDocument(doc)}
+                      >
+                        <div className="document-icon">
+                          {doc.filename?.toLowerCase().endsWith('.pdf') ? '📄' :
+                           doc.filename?.toLowerCase().endsWith('.docx') ? '📝' :
+                           doc.filename?.toLowerCase().endsWith('.doc') ? '📝' :
+                           doc.filename?.toLowerCase().endsWith('.txt') ? '📋' :
+                           doc.filename?.toLowerCase().endsWith('.png') ? '🖼️' :
+                           doc.filename?.toLowerCase().endsWith('.jpg') ? '🖼️' :
+                           doc.filename?.toLowerCase().endsWith('.jpeg') ? '🖼️' : '📎'}
+                        </div>
+                        <div className="document-info">
+                          <div className="document-name" title={doc.filename}>
+                            {doc.filename || 'Unnamed file'}
+                          </div>
+                          <div className="document-date">
+                            {new Date(doc.uploaded_at || doc.created_at).toLocaleDateString()}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div className="documents-preview">
+                {selectedDocument ? (
+                  <div className="preview-container">
+                    <div className="preview-header">
+                      <h4>{selectedDocument.filename || 'Document Preview'}</h4>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.open(selectedDocument.url || selectedDocument.file_url, '_blank')}
+                        title="Download file"
+                      >
+                        📥
+                      </Button>
+                    </div>
+                    <div className="preview-content">
+                      {selectedDocument.filename?.toLowerCase().endsWith('.pdf') ? (
+                        <iframe
+                          src={selectedDocument.url}
+                          className="pdf-preview"
+                          title={selectedDocument.filename}
+                        />
+                      ) : selectedDocument.filename?.toLowerCase().endsWith('.png') ||
+                          selectedDocument.filename?.toLowerCase().endsWith('.jpg') ||
+                          selectedDocument.filename?.toLowerCase().endsWith('.jpeg') ? (
+                        <img
+                          src={selectedDocument.url}
+                          alt={selectedDocument.filename}
+                          className="image-preview"
+                          style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                        />
+                      ) : selectedDocument.filename?.toLowerCase().endsWith('.txt') ? (
+                        <pre className="text-preview">
+                          {/* For text files, we would fetch the content and display it */}
+                          Text file content would be displayed here
+                        </pre>
+                      ) : (
+                        <div className="unsupported-preview">
+                          <div className="preview-placeholder">
+                            <div className="file-icon-large">
+                              {selectedDocument.filename?.toLowerCase().endsWith('.docx') ? '📝' :
+                               selectedDocument.filename?.toLowerCase().endsWith('.doc') ? '📝' : '📎'}
+                            </div>
+                            <p>This file type requires download to view</p>
+                            <Button
+                              onClick={() => window.open(selectedDocument.url, '_blank')}
+                            >
+                              Download File
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="no-preview">
+                    <div className="preview-placeholder">
+                      <div className="file-icon-large">📁</div>
+                      <p>Select a document to preview</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end mt-4 pt-4 border-t">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsDocumentsDialogOpen(false)}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="suppliers-controls">
         <div className="search-bar">
@@ -239,8 +572,7 @@ const Suppliers = () => {
         </div>
         <div className="supplier-stats">
           <span className="stat-item">Total: {suppliers.length}</span>
-          <span className="stat-item">High Risk: {suppliers.filter(s => s.riskLevel === 'High').length}</span>
-          <span className="stat-item">Active: {suppliers.length}</span>
+          <span className="stat-item">Active: {suppliers.filter(s => s.active).length}</span>
         </div>
       </div>
 
@@ -252,9 +584,17 @@ const Suppliers = () => {
                 <CardTitle className="supplier-name">{supplier.name}</CardTitle>
                 <span className="supplier-id">{supplier.id}</span>
               </div>
-              <span className={`risk-badge ${getRiskBadgeClass(supplier.riskLevel)}`}>
-                {supplier.riskLevel}
-              </span>
+              <div className="supplier-header-right">
+                <Button
+                  className="edit-btn"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => openEditDialog(supplier)}
+                  title="Edit supplier"
+                >
+                  ✏️
+                </Button>
+              </div>
             </CardHeader>
 
             <CardContent className="supplier-details">
@@ -274,6 +614,15 @@ const Suppliers = () => {
                 <span className="detail-label">Last Assessment:</span>
                 <span className="detail-value">{new Date(supplier.last_assessment).toLocaleDateString()}</span>
               </div>
+              <div className="detail-item">
+                <span className="detail-label">Status:</span>
+                <span
+                  className={`status-text ${supplier.active ? 'status-active' : 'status-inactive'}`}
+                  onClick={() => handleActiveToggle(supplier.id, supplier.active)}
+                >
+                  {supplier.active ? 'Active' : 'Inactive'}
+                </span>
+              </div>
               {supplier.contact_email && (
                 <div className="detail-item">
                   <span className="detail-label">Email:</span>
@@ -285,13 +634,17 @@ const Suppliers = () => {
             <div className="supplier-actions">
               <Button
                 className="action-btn primary"
-                onClick={() => {
+              onClick={() => {
                   const input = document.createElement('input');
                   input.type = 'file';
-                  input.accept = '.pdf,.doc,.docx,.txt';
-                  input.onchange = (e) => {
-                    if (e.target.files[0]) {
-                      handleFileUpload(supplier.id, e.target.files[0]);
+                  input.accept = '.pdf,.docx,.png,.jpg,.jpeg';
+                  input.multiple = true;
+                  input.onchange = async (e) => {
+                    const files = Array.from(e.target.files);
+                    if (files.length > 0) {
+                      for (const file of files) {
+                        await handleFileUpload(supplier.id, file);
+                      }
                     }
                   };
                   input.click();
@@ -299,6 +652,13 @@ const Suppliers = () => {
                 disabled={isUploading}
               >
                 {isUploading ? 'Uploading...' : 'Upload Document'}
+              </Button>
+              <Button
+                className="action-btn tertiary"
+                onClick={() => handleViewDocuments(supplier)}
+                title="View documents"
+              >
+                View Documents
               </Button>
               <Button className="action-btn secondary">Run Analysis</Button>
             </div>

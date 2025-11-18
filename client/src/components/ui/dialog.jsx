@@ -31,12 +31,14 @@ const DialogContent = ({ className, children, onClose, ...props }) => {
 
   return (
     <div className={`relative bg-white rounded-lg shadow-lg max-w-lg w-full mx-4 max-h-[90vh] overflow-auto ${className || ''}`} {...props}>
-      <button
-        className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 w-6 h-6 flex items-center justify-center text-black hover:bg-gray-200 z-10"
-        onClick={handleCloseClick}
-      >
-        ✕
-      </button>
+      {onClose && (
+        <button
+          className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 w-6 h-6 flex items-center justify-center text-black hover:bg-gray-200 z-10"
+          onClick={handleCloseClick}
+        >
+          ✕
+        </button>
+      )}
       {children}
     </div>
   );
