@@ -39,12 +39,12 @@ def analyze_risk(data: AnalyzeQuery):
 
     # SSR Step 4: Perform vector search using SSR embedding (top 8 chunks)
     try:
-        search_result = qdrant.search(
+        search_result = qdrant.query_points(
             collection_name=SUPPLIER_DOC_COLLECTION,
-            query_vector=ssr_embedding,
+            query=ssr_embedding,
             limit=8,
-            query_filter=vendor_filter
-        )
+            filter=vendor_filter
+        ).points
     except Exception as e:
         raise HTTPException(500, f"Vector DB search error: {e}")
 

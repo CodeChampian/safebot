@@ -18,22 +18,17 @@ def health():
 
 
 @router.get("/suppliers")
-def list_suppliers():
-    """Fetch distinct vendor IDs stored as payload metadata."""
+async def list_suppliers():
+    """Fetch all supplier names from database for risk analysis selection."""
     try:
-        scroll = qdrant.scroll(
-            collection_name=SUPPLIER_DOC_COLLECTION,
-            limit=200,
-            with_payload=True
-        )
+        # Get all supplier names from MongoDB for analysis selection
+        suppliers_cursor = suppliers_collection.find({"active": True}, {"name": 1, "id": 1})
+        suppliers = await suppliers_cursor.to_list(length=None)
 
-        vendors = set()
-        for point in scroll[0]:
-            vid = point.payload.get("vendor_id")
-            if vid:
-                vendors.add(vid)
+        # Return supplier names
+        supplier_names = [supplier["name"] for supplier in suppliers]
 
-        return {"suppliers": sorted(list(vendors))}
+        return {"suppliers": sorted(supplier_names)}
 
     except Exception as e:
         raise HTTPException(500, f"Failed to retrieve supplier list: {e}")
@@ -101,6 +96,7 @@ async def create_supplier(supplier_data: SupplierCreate):
             "contact_email": new_supplier["contact_email"],
             "contact_phone": new_supplier["contact_phone"],
             "description": new_supplier["description"],
+            "active": new_supplier["active"],
             "document_count": new_supplier["document_count"],
             "last_assessment": new_supplier["last_assessment"],
             "created_at": new_supplier["created_at"]
@@ -144,6 +140,7 @@ async def update_supplier(supplier_id: str, supplier_data: SupplierCreate):
             "contact_email": updated_supplier.get("contact_email"),
             "contact_phone": updated_supplier.get("contact_phone"),
             "description": updated_supplier.get("description"),
+            "active": updated_supplier.get("active", True),
             "document_count": updated_supplier.get("document_count", 0),
             "last_assessment": updated_supplier["last_assessment"],
             "created_at": updated_supplier["created_at"]

@@ -13,11 +13,10 @@ const RiskAnalyzer = () => {
     const fetchSuppliers = async () => {
       try {
         const response = await getSuppliers();
-        setSuppliers(response.suppliers.length > 0 ? response.suppliers : ['SUP-11', 'SUP-22', 'SUP-29', 'SUP-45', 'SUP-67']);
+        setSuppliers(response.suppliers || []);
       } catch (error) {
         console.error('Error fetching suppliers:', error);
-        // Fallback to demo suppliers
-        setSuppliers(['SUP-11', 'SUP-22', 'SUP-29', 'SUP-45', 'SUP-67']);
+        setSuppliers([]);
       }
     };
     fetchSuppliers();
