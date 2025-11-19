@@ -504,6 +504,49 @@ const Suppliers = () => {
                           className="pdf-preview"
                           title={selectedDocument.filename}
                         />
+                      ) : selectedDocument.filename?.toLowerCase().endsWith('.docx') ||
+                          selectedDocument.filename?.toLowerCase().endsWith('.doc') ? (
+                        <div className="docx-preview-container" style={{ width: '100%', height: '100%' }}>
+                          <iframe
+                            src={`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/documents/${selectedDocument.id}/preview`}
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              border: 'none',
+                              borderRadius: '4px'
+                            }}
+                            title={`${selectedDocument.filename} Preview`}
+                            onLoad={(e) => {
+                              // Hide any loading indicator or show success
+                              console.log('DOCX preview loaded successfully');
+                            }}
+                            onError={(e) => {
+                              // Fallback to download if preview fails
+                              e.target.style.display = 'none';
+                              const fallback = e.target.parentNode.querySelector('.docx-fallback');
+                              if (fallback) fallback.style.display = 'flex';
+                            }}
+                          />
+                          {/* Fallback UI for when preview fails */}
+                          <div className="docx-fallback" style={{
+                            display: 'none',
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            textAlign: 'center'
+                          }}>
+                            <div className="preview-placeholder">
+                              <div className="file-icon-large">📝</div>
+                              <p>Preview not available</p>
+                              <Button
+                                onClick={() => window.open(selectedDocument.url, '_blank')}
+                              >
+                                Download Document
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
                       ) : selectedDocument.filename?.toLowerCase().endsWith('.png') ||
                           selectedDocument.filename?.toLowerCase().endsWith('.jpg') ||
                           selectedDocument.filename?.toLowerCase().endsWith('.jpeg') ? (
@@ -521,10 +564,7 @@ const Suppliers = () => {
                       ) : (
                         <div className="unsupported-preview">
                           <div className="preview-placeholder">
-                            <div className="file-icon-large">
-                              {selectedDocument.filename?.toLowerCase().endsWith('.docx') ? '📝' :
-                               selectedDocument.filename?.toLowerCase().endsWith('.doc') ? '📝' : '📎'}
-                            </div>
+                            <div className="file-icon-large">📎</div>
                             <p>This file type requires download to view</p>
                             <Button
                               onClick={() => window.open(selectedDocument.url, '_blank')}

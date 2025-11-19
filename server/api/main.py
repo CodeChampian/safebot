@@ -3,7 +3,7 @@ import requests
 import json
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -14,6 +14,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue, SearchRequest, PointStruct
 from langchain_huggingface import HuggingFaceEmbeddings
+import mammoth
 
 # Load environment variables
 load_dotenv()
@@ -68,6 +69,20 @@ app.add_middleware(
 )
 
 # Mount static files directory for file serving
+# Add custom CORS headers for file serving
+from starlette.responses import Response
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class CORSMiddlewareForFiles(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/files/"):
+            response.headers["Access-Control-Allow-Origin"] = "*"
+            response.headers["Access-Control-Allow-Methods"] = "*"
+            response.headers["Access-Control-Allow-Headers"] = "*"
+        return response
+
+app.add_middleware(CORSMiddlewareForFiles)
 app.mount("/files", StaticFiles(directory=UPLOAD_DIR), name="files")
 
 # Embeddings
@@ -377,6 +392,139 @@ async def get_supplier_documents(supplier_id: str):
         raise
     except Exception as e:
         raise HTTPException(500, f"Failed to retrieve documents: {e}")
+
+
+@app.get("/api/documents/{document_id}/preview")
+async def preview_document(document_id: str):
+    """Convert a DOCX document to HTML for preview."""
+    try:
+        # Find the document in the database
+        document = await document_logs_collection.find_one({"file_id": document_id})
+        if not document:
+            raise HTTPException(404, "Document not found")
+
+        file_path = document["file_path"]
+
+        # Check if file exists
+        if not os.path.exists(file_path):
+            raise HTTPException(404, "Document file not found")
+
+        # Get file extension
+        file_extension = document.get("file_extension", "").lower()
+
+        # Only process DOCX files for now
+        if file_extension not in [".docx"]:
+            raise HTTPException(400, "Unsupported file type for preview")
+
+        # Convert DOCX to HTML using mammoth
+        with open(file_path, "rb") as docx_file:
+            result = mammoth.convert_to_html(docx_file)
+
+            # Get the HTML content
+            html_content = result.value
+
+            # Create a styled HTML page
+            full_html = f"""
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>{document["filename"]} - Preview</title>
+                <style>
+                    body {{
+                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                        line-height: 1.6;
+                        margin: 0;
+                        padding: 20px;
+                        background-color: #f5f5f5;
+                    }}
+                    .document-container {{
+                        max-width: 800px;
+                        margin: 0 auto;
+                        background: white;
+                        padding: 30px;
+                        border-radius: 8px;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    }}
+                    .document-header {{
+                        text-align: center;
+                        margin-bottom: 30px;
+                        padding-bottom: 20px;
+                        border-bottom: 1px solid #eee;
+                    }}
+                    .document-header h1 {{
+                        color: #333;
+                        margin-bottom: 10px;
+                        font-size: 24px;
+                    }}
+                    .document-meta {{
+                        color: #666;
+                        font-size: 14px;
+                    }}
+                    .document-content {{
+                        color: #333;
+                        overflow-wrap: break-word;
+                    }}
+                    .document-content h1,
+                    .document-content h2,
+                    .document-content h3,
+                    .document-content h4,
+                    .document-content h5,
+                    .document-content h6 {{
+                        color: #2c3e50;
+                        margin-top: 1.5em;
+                        margin-bottom: 0.5em;
+                    }}
+                    .document-content p {{
+                        margin-bottom: 1em;
+                    }}
+                    .document-content ul,
+                    .document-content ol {{
+                        margin-bottom: 1em;
+                        padding-left: 30px;
+                    }}
+                    .document-content table {{
+                        border-collapse: collapse;
+                        width: 100%;
+                        margin-bottom: 1em;
+                    }}
+                    .document-content td,
+                    .document-content th {{
+                        border: 1px solid #ddd;
+                        padding: 8px;
+                        text-align: left;
+                    }}
+                    .document-content th {{
+                        background-color: #f2f2f2;
+                        font-weight: bold;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="document-container">
+                    <div class="document-header">
+                        <h1>{document["filename"]}</h1>
+                        <div class="document-meta">
+                            Uploaded: {document["uploaded_at"]}
+                        </div>
+                    </div>
+                    <div class="document-content">
+                        {html_content}
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+
+            return HTMLResponse(content=full_html, status_code=200)
+
+    except HTTPException:
+        raise
+    except mammoth.DocumentConverterError as e:
+        raise HTTPException(422, f"Document conversion error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(500, f"Failed to preview document: {str(e)}")
 
 
 # ==========================

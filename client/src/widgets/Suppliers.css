@@ -548,11 +548,18 @@
   flex-direction: column;
 }
 
-.pdf-preview {
+.pdf-preview,
+.docx-preview {
   width: 100%;
   height: 100%;
   border: none;
   border-radius: 4px;
+}
+
+.docx-preview-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
 }
 
 .text-preview {
