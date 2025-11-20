@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getAllSuppliers, createSupplier, updateSupplier, uploadSupplierDocument, getSupplierDocuments } from '../api/api';
+import { getAllSuppliers, createSupplier, updateSupplier, uploadSupplierDocument, getSupplierDocuments, deleteSupplierDocument } from '../api/api';
 import { Button } from '../components/ui/button.jsx';
 import { Input } from '../components/ui/input.jsx';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card.jsx';
@@ -20,6 +20,8 @@ const Suppliers = () => {
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [documentToDelete, setDocumentToDelete] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     category: '',
@@ -203,6 +205,35 @@ const Suppliers = () => {
     supplier.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
     supplier.category.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const handleDeleteDocument = async () => {
+    if (!documentToDelete || !documentsViewSupplier) return;
+
+    try {
+      await deleteSupplierDocument(documentsViewSupplier.id, documentToDelete.id);
+
+      // Remove document from local state
+      setSupplierDocuments(prev => prev.filter(doc => doc.id !== documentToDelete.id));
+
+      // Clear selected document if it was the deleted one
+      if (selectedDocument && selectedDocument.id === documentToDelete.id) {
+        setSelectedDocument(null);
+      }
+
+      // Refresh suppliers to update document count
+      fetchSuppliers();
+
+      setIsDeleteDialogOpen(false);
+      setDocumentToDelete(null);
+    } catch (error) {
+      console.error('Error deleting document:', error);
+    }
+  };
+
+  const confirmDeleteDocument = (document) => {
+    setDocumentToDelete(document);
+    setIsDeleteDialogOpen(true);
+  };
 
   const getRiskBadgeClass = (riskLevel) => {
     switch (riskLevel.toLowerCase()) {
@@ -430,6 +461,42 @@ const Suppliers = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Delete Document Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Confirm Delete</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-center">
+              Are you sure you want to delete the file "{documentToDelete?.filename}"?
+            </p>
+            <p className="text-sm text-gray-600 text-center">
+              This action cannot be undone.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setDocumentToDelete(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteDocument}
+            >
+              Delete File
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Documents Viewer Modal */}
       {isDocumentsDialogOpen && (
         <div className="documents-dialog">
@@ -488,14 +555,24 @@ const Suppliers = () => {
                   <div className="preview-container">
                     <div className="preview-header">
                       <h4>{selectedDocument.filename || 'Document Preview'}</h4>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => window.open(selectedDocument.url || selectedDocument.file_url, '_blank')}
-                        title="Download file"
-                      >
-                        📥
-                      </Button>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => window.open(selectedDocument.url || selectedDocument.file_url, '_blank')}
+                          title="Download file"
+                        >
+                          📥
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => confirmDeleteDocument(selectedDocument)}
+                          title="Delete file"
+                        >
+                          🗑️
+                        </Button>
+                      </div>
                     </div>
                     <div className="preview-content">
                       {selectedDocument.filename?.toLowerCase().endsWith('.pdf') ? (

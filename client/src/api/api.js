@@ -175,3 +175,24 @@ export const getSupplierDocuments = async (supplierId) => {
     throw error;
   }
 };
+
+export const deleteSupplierDocument = async (supplierId, documentId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/suppliers/${supplierId}/documents/${documentId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('API Error:', error);
+    throw error;
+  }
+};

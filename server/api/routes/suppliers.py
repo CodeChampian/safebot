@@ -5,7 +5,9 @@ from fastapi.responses import HTMLResponse
 from datetime import datetime
 from server.connections import suppliers_collection, document_logs_collection, qdrant, SUPPLIER_DOC_COLLECTION
 from server.models.models import SupplierCreate
+from server.ingestion.utils import chunk_and_embed_document, delete_document_chunks
 import mammoth
+import shutil
 
 router = APIRouter()
 
@@ -221,6 +223,29 @@ async def upload_supplier_document(supplier_id: str, file: UploadFile = File(...
             {"$inc": {"document_count": 1}}
         )
 
+        # Chunk and embed document for RAG
+        print(f"RAG debug: Processing file {file.filename}, extension: {file_extension}")
+        try:
+            # Only process text-extractable files for RAG
+            if file_extension.lower() in ['.pdf', '.docx', '.txt']:
+                print(f"RAG debug: Starting chunking for {file.filename}")
+                points, chunk_message = chunk_and_embed_document(
+                    file_path=file_path,
+                    document_id=file_id,
+                    vendor_id=supplier_id,
+                    filename=file.filename,
+                    qdrant_client=qdrant,
+                    collection_name=SUPPLIER_DOC_COLLECTION
+                )
+                print(f"RAG processing: {chunk_message}")
+            else:
+                print(f"RAG debug: Skipping file {file.filename} - not a text-extractable type")
+        except Exception as e:
+            # Log the error but don't fail the upload
+            print(f"Warning: RAG processing failed for {file.filename}: {e}")
+            import traceback
+            traceback.print_exc()
+
         return {"message": "Document uploaded successfully", "file_path": file_path}
     except HTTPException:
         raise
@@ -262,6 +287,53 @@ async def get_supplier_documents(supplier_id: str):
         raise
     except Exception as e:
         raise HTTPException(500, f"Failed to retrieve documents: {e}")
+
+
+@router.delete("/api/suppliers/{supplier_id}/documents/{document_id}")
+async def delete_supplier_document(supplier_id: str, document_id: str):
+    """Delete a specific document for a supplier."""
+    try:
+        supplier = await suppliers_collection.find_one({"id": supplier_id})
+        if not supplier:
+            raise HTTPException(404, "Supplier not found")
+
+        # Find the document in the database
+        document = await document_logs_collection.find_one({"file_id": document_id, "supplier_id": supplier_id})
+        if not document:
+            raise HTTPException(404, "Document not found")
+
+        # Delete the file from filesystem
+        file_path = document["file_path"]
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                # Log the error but continue with database deletion
+                print(f"Warning: Could not delete file {file_path}: {e}")
+
+        # Delete document chunks from Qdrant (only for text-extractable files)
+        try:
+            if document["file_extension"].lower() in ['.pdf', '.docx', '.txt']:
+                success, message = delete_document_chunks(qdrant, SUPPLIER_DOC_COLLECTION, document_id)
+                print(f"RAG cleanup: {message}")
+        except Exception as e:
+            # Log the error but continue with deletion
+            print(f"Warning: RAG cleanup failed for document {document_id}: {e}")
+
+        # Delete the document log from database
+        await document_logs_collection.delete_one({"file_id": document_id, "supplier_id": supplier_id})
+
+        # Update document count for supplier
+        await suppliers_collection.update_one(
+            {"id": supplier_id},
+            {"$inc": {"document_count": -1}}
+        )
+
+        return {"message": "Document deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Failed to delete document: {e}")
 
 
 @router.get("/api/documents/{document_id}/preview")
